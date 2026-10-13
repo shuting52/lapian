@@ -14,6 +14,16 @@ def run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True, capture_output=True)
 
 
+def run_tolerant(cmd: list[str]) -> None:
+    """Keyframe pass: single-shot videos yield zero scene changes, which makes
+    ffmpeg exit non-zero with no packets written. That's a valid result, not a
+    failure — the 1fps overview pass is the fallback."""
+    try:
+        run(cmd)
+    except subprocess.CalledProcessError:
+        pass
+
+
 def main() -> None:
     if len(sys.argv) < 3:
         print("usage: extract_frames.py <video> <out_dir>", file=sys.stderr)
@@ -24,7 +34,7 @@ def main() -> None:
     key.mkdir(parents=True, exist_ok=True)
     ovr.mkdir(parents=True, exist_ok=True)
 
-    run(["ffmpeg", "-y", "-v", "error", "-i", video,
+    run_tolerant(["ffmpeg", "-y", "-v", "error", "-i", video,
          "-vf", "select='gt(scene,0.35)',scale=960:-1",
          "-vsync", "vfr", str(key / "kf_%04d.jpg")])
     run(["ffmpeg", "-y", "-v", "error", "-i", video,
