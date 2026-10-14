@@ -2,7 +2,9 @@
 
 输入一条用户上传的视频，输出拉片表和逐镜头复刻提示词——按提示词重新生成，应能得到与原片镜头设计一模一样的视频。全域类型覆盖：AI 电商、影视短剧、动作模仿、舞蹈、白模视频等，不预设题材走同一套流程。
 
-## 十一条硬规则
+**模式 B（AI 电商复刻）**：在拉片交付物基础上，输入用户产品实拍图 + 口播文案，输出"结构 1:1、画面全换"的带货复刻视频。详见 `references/ecommerce-remake.md`。
+
+## 十五条硬规则
 
 1. 只分析本次上传的视频；不确定的细节标 `[待确认]`，绝不编造
 2. 每条复刻提示词必须自包含（画幅比/时长/运镜/主体/风格/禁止项）
@@ -15,6 +17,10 @@
 9. **音画同步是复刻的一部分**：动作节拍/台词/BGM/自然音都要有时间轴并对齐
 10. **类型先识别后确认**：`classify_video.py` 给建议，人工确认
 11. **1:1 验收门**：所有适用项 ✅、❌ 有修正记录或标注工具限制、零未核验项，否则不交付
+12. **时长 1:1**：复刻版总时长与原片一致（误差 ≤0.5s）
+13. **产品主体必须用实拍图**（模式 B）：AI 不画产品主体，双 reference（对标关键帧 + 实拍产品图），走样即返工
+14. **换皮三件套**（模式 B）：只换产品、文案、背景；镜序/时长/字幕条/转场/节奏一律不动
+15. **不搬运**（模式 B）：不用原片画面/口播/水印，AI 画面显著打标，"1:1"指结构复刻非像素复制
 
 ## 工作流程（8 步）
 
@@ -26,6 +32,15 @@
 6. **写复刻提示词**：每镜头一条，动作节拍与变速要求从 `sync-map.md` 原样搬入
 7. **自检**：`detect_black.py` 查黑场；`verify_lapian.py` 校验编号/timecode/总时长
 8. **生成验证（必做）**：逐镜头生成 → 抽帧并排对比 → 按一致性核对表打分 → 按 `sync-map.md` 装配音画（原片音轨取段、变速段重定时、台词对轴）→ 同步核验 → `consistency-report.md`；不一致就修提示词重生成，直到接受或额度用尽
+
+### 模式 B：AI 电商复刻（6 步，详见 `references/ecommerce-remake.md`）
+
+1. `remake_plan.py` 建换皮计划 → `remake-plan.json`（timecode/口播/字幕槽位/产品图引用）
+2. 抽帧定构图（人工确认后再生成）
+3. 按 `assets/remake-prompt-template.md` 写重绘提示词（双 reference，产品保真）
+4. 逐镜头生成 → 抽帧质检（产品外观/Logo/文字不错位），AI 画面打标
+5. TTS 配音（`voice/SHxx.wav`，超长改文案/语速，不动时间轴）
+6. `assemble_remake.py` 装配 → `verify_remake.py` 质检 → 交付 `remake.mp4`
 
 ## 脚本一览
 
@@ -39,6 +54,9 @@
 | `analyze_audio.py` | 视频 → `audio.json` | 音量/静音段（内容类型必须人耳确认） |
 | `detect_black.py` | 视频 → `black.json` | 黑场/淡出检测 |
 | `verify_lapian.py` | shots.json + meta.json | 编号连续/timecode 相接/总时长一致 |
+| `remake_plan.py` | shots.json + meta.json + copy.txt + products/ → `remake-plan.json` | 换皮计划：timecode/口播/字幕槽位/产品图引用 |
+| `assemble_remake.py` | remake-plan.json + clips/ + voice/ → `remake.mp4` | 1:1 装配：画面拼接+字幕条+配音（只编码一次 AAC） |
+| `verify_remake.py` | remake-plan.json + remake.mp4 | 换皮质检：文件齐备/时长 ≤0.5s/分辨率一致 |
 
 ## References
 
@@ -48,12 +66,16 @@
 | `references/sync-guide.md` | 音画同步指南（sync-map/转录/音频分层/核验） |
 | `references/fidelity-checklist.md` | 14 项一致性核对 + 1:1 验收门 |
 | `references/replica-generation.md` | 复刻生成方法：音频必做/慢放重定时/分段关键帧/交叉淡化/同步装配 |
+| `references/ecommerce-remake.md` | AI 电商复刻模式：换皮计划/重绘/TTS/装配/字幕条/红线（模式 B 完整流程） |
 | `references/shot-language.md` | 镜头语言规范 |
 | `assets/replica-prompt-template.md` | 复刻提示词模板 |
+| `assets/remake-prompt-template.md` | 换皮重绘提示词模板（双 reference + 产品保真检查表） |
 
 ## 交付物（Output Contract）
 
 `lapian.md`（拉片表）/ `replica-prompts.md`（复刻提示词）/ `consistency-report.md`（一致性结论+同步核验）/ `transcript.md`（台词转录）/ `sync-map.md`（音画同步时间轴）/ `shots.json` / `meta.json` / `cuts.json` / `audio.json` / `black.json`
+
+模式 B 额外交付：`remake-plan.json`（换皮计划）/ `remake-prompts.md`（换皮重绘提示词）/ `remake.mp4`（复刻成片）
 
 ## 实战案例
 
@@ -73,3 +95,4 @@
 - `d74b056` scaffold：skill 架子、脚本、模板
 - `922e45a` 三条硬规则 + 切点/黑场/音频脚本 + 一致性核对表
 - `dc73ceb` 音画同步指南 + 类型自动识别 + 逐帧拆解 + 1:1 验收门（规则 9/10/11）
+- 模式 B：AI 电商复刻——`references/ecommerce-remake.md` + `assets/remake-prompt-template.md` + `remake_plan.py` / `assemble_remake.py` / `verify_remake.py`；规则 13/14/15（产品实拍保真/换皮三件套/不搬运）

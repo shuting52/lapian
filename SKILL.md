@@ -18,6 +18,24 @@ description: "拉片：以1:1复刻为目标，全维度逐镜头拆解用户上
 7. **自检交付。** 跑 `scripts/detect_black.py <视频> black.json` 确认黑场/淡出——几帧的短黑尾是硬收尾，不是淡出，如实记录不写成淡出。再跑 `scripts/verify_lapian.py shots.json meta.json` 做机器自检（编号连续、timecode 首尾相接、总时长一致），最后对照 Output Contract 人工检查；看不清或不确定的信息标 `[待确认]`，不编造。完整写法见[完整示例](references/worked-example.md)。
 8. **生成验证（必做）。** 按[复刻生成](references/replica-generation.md)逐镜头生成复刻片段（受单次生成数量上限约束时分批并如实告知用户），抽帧与原片同位置帧并排对比，按[一致性核对表](references/fidelity-checklist.md)逐项记录；再按 `sync-map.md` 装配音画（原片音轨取段、变速段重定时、台词对轴），用[音画同步指南](references/sync-guide.md)的核验方法检查同步，结论写入 `consistency-report.md`。有不一致处先修提示词/时间轴再重新生成，直到用户接受或生成上限用尽。
 
+## 模式 B：AI 电商复刻（在拉片交付物基础上继续）
+
+输入：原视频 + 用户产品实拍图 + 用户口播文案，输出"结构 1:1、画面全换"的带货复刻视频。
+前置：原片已走完上面 8 步，拿到 `shots.json` / `meta.json` / `sync-map.md` / `replica-prompts.md`。
+完整流程见 [AI 电商复刻模式](references/ecommerce-remake.md)，6 步：
+
+1. **建换皮计划。** 跑 `scripts/remake_plan.py shots.json meta.json copy.txt products/ -o remake-plan.json`：
+   逐镜头分配 timecode、口播文案、字幕槽位、产品图引用；`swap` 字段（原主体→新主体/新背景）留待第 3 步填。
+   文案段数 ≠ 镜头数时先对齐文案，不动时间轴。
+2. **抽帧定构图。** 沿用 `extract_frames.py` 抽每镜关键帧，人工确认构图后再开工生成。
+3. **写重绘提示词。** 套用 `assets/remake-prompt-template.md`：景别/运镜/构图/光影从原片照搬，
+   主体换成用户产品 + 新场景；**双 reference**（对标关键帧定构图 + 实拍产品图定产品），产品主体禁止纯文本生成。
+4. **生成与质检。** 逐镜头生成 → 抽帧并排对比 → 按 `domains.md` 电商条目核对产品外观/Logo/文字不错位；
+   AI 生成画面显著打标。
+5. **TTS 配音。** 口播文案逐镜转语音（`voice/SH01.wav`…）；单镜配音超长时改文案或调语速，不许动时间轴。
+6. **装配与交付。** 跑 `scripts/assemble_remake.py remake-plan.json clips/ voice/ -o remake.mp4`，
+   再跑 `scripts/verify_remake.py remake-plan.json remake.mp4` 质检，人工对照一致性核对表后交付。
+
 ## Output Contract
 在任务目录下交付：
 - `lapian.md`：拉片表（镜头编号 / timecode / 景别 / 运镜 / 内容一句话 / 音频），格式见[拉片模板](references/analysis-template.md)
@@ -28,6 +46,11 @@ description: "拉片：以1:1复刻为目标，全维度逐镜头拆解用户上
 - `shots.json`：镜头清单（机器可读，供 verify 脚本校验）
 - `meta.json`：视频元数据（机器可读）
 - `cuts.json` / `audio.json` / `black.json`：切点候选、音频分析、黑场检测的机器可读记录
+
+模式 B（AI 电商复刻）额外交付：
+- `remake-plan.json`：换皮计划（每镜 timecode / 口播文案 / 字幕槽位 / 产品图引用 / swap 待填项），`remake_plan.py` 生成
+- `remake-prompts.md`：逐镜头换皮重绘提示词（套用 `assets/remake-prompt-template.md`，双 reference 声明）
+- `remake.mp4`：复刻成片（`assemble_remake.py` 装配，总时长与原片误差 ≤0.5s，配音只编码一次 AAC）
 
 ## Operating Rules
 1. 只分析用户本次上传的视频；不确定的画面细节标注 `[待确认]`，绝不编造。
@@ -42,3 +65,8 @@ description: "拉片：以1:1复刻为目标，全维度逐镜头拆解用户上
 10. **类型先识别后确认。** 每个视频先跑 `classify_video.py` 得类型建议，人工确认后再拉片；建议与人工判断冲突时以人工为准，并记录原因。
 11. **1:1 验收门。** 交付"可复刻"前，`consistency-report.md` 必须满足：所有适用项 ✅；❌ 项有修正记录或明确标注工具限制；零未核验项。达不到就继续迭代，不粉饰、不降级交付。
 12. **时长 1:1。** 复刻版总时长必须与原片一致（误差不超过 0.5 秒）；分段复刻时段数按总时长规划，交叉淡化时长计入总时长。
+13. **产品主体必须用实拍图（模式 B）。** AI 不画产品主体；重绘提示词必须声明双 reference（对标关键帧定构图 + 实拍产品图定产品）；
+    产品 logo/颜色/款式走样即返工，能看清产品的镜头宁可用实拍图直接合成。
+14. **换皮三件套（模式 B）。** 只换产品、文案、背景；镜序、每镜时长、字幕条样式/位置、转场、节奏一律不动。
+15. **不搬运（模式 B）。** 不直接使用原片画面、原片口播文案、原片水印/logo；AI 生成画面显著打标；文案用用户自己的口播；
+    "1:1"指结构复刻（镜头数/时长/转场/字幕样式对齐），不是像素复制——接单时先说清。
